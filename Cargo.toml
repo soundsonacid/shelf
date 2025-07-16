@@ -1,0 +1,24 @@
+[package]
+name    = "shelf"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.98"
+
+[profile.release]
+codegen-units   = 1
+debug           = false
+lto             = true
+opt-level       = 3
+overflow-checks = false
+
+[profile.fast]
+inherits      = "release"
+codegen-units = 256
+debug         = false
+incremental   = true
+lto           = false
+opt-level     = 2
+panic         = "abort"
+strip         = true

@@ -1,0 +1,27 @@
+pub const MAGIC: [u8; 4] = [0x7F, 0x45, 0x4C, 0x46];
+pub const ELFCLASS64: u8 = 2;
+pub const ELFDATA2LSB: u8 = 1;
+pub const EV_CURRENT: u32 = 1;
+
+pub const SHT_NULL: u32 = 0;
+pub const SHT_PROGBITS: u32 = 1;
+pub const SHT_SYMTAB: u32 = 2;
+pub const SHT_STRTAB: u32 = 3;
+pub const SHT_RELA: u32 = 4;
+pub const SHT_HASH: u32 = 5;
+pub const SHT_DYNAMIC: u32 = 6;
+pub const SHT_NOTE: u32 = 7;
+pub const SHT_NOBITS: u32 = 8;
+pub const SHT_REL: u32 = 9;
+pub const SHT_SHLIB: u32 = 10;
+pub const SHT_DYNSYM: u32 = 11;
+pub const SHT_INIT_ARRAY: u32 = 14;
+pub const SHT_FINI_ARRAY: u32 = 15;
+pub const SHT_PREINIT_ARRAY: u32 = 16;
+pub const SHT_GROUP: u32 = 17;
+pub const SHT_SYMTAB_SHNDX: u32 = 18;
+
+pub const SYMTAB: &str = ".symtab";
+pub const STRTAB: &str = ".strtab";
+pub const DYNSYM: &str = ".dynsym";
+pub const DYNSTR: &str = ".dynstr";

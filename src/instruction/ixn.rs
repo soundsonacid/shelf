@@ -10,8 +10,8 @@ impl Ixn {
         let ixn = self.0;
         DecodedIxn {
             opcode: ixn[0],
-            dst: (ixn[1] >> 4) & 0x0F,
-            src: ixn[1] & 0x0F,
+            dst: ixn[1] & 0x0F,
+            src: (ixn[1] >> 4) & 0x0F,
             off: i16::from_le_bytes(ixn[2..4].try_into().unwrap()),
             imm: i32::from_le_bytes(ixn[4..8].try_into().unwrap()),
         }

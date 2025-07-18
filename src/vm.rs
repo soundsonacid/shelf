@@ -1,10 +1,10 @@
 use anyhow::Result;
 
-use crate::instruction::ixn::{DecodedIxn, IXN_SIZE, Ixn};
+use crate::instruction::ixn::{DecodedIxn, ExecutableIxn, IXN_SIZE, Ixn};
 use crate::parser::Elf;
 use crate::parser::constants::*;
 
-pub fn execute(elf: Elf) -> Result<()> {
+pub fn execute(elf: Elf) -> Result<u64> {
     // load .text section
     // load .rodata section
     // load .bss.stack section
@@ -15,12 +15,9 @@ pub fn execute(elf: Elf) -> Result<()> {
     let bss_heap_region = Region::from_section(&elf, BSS_HEAP);
 
     let memory = Memory::new(vec![text_region, rodata_region, bss_stack_region, bss_heap_region]);
-    dbg!(&memory);
 
     let vm = Vm::new(elf, memory);
-    vm.load_and_execute();
-
-    Ok(())
+    vm.load_and_execute()
 }
 
 #[derive(Debug)]
@@ -66,7 +63,6 @@ impl std::fmt::Debug for Region {
 
 impl Region {
     fn from_section(elf: &Elf, section_name: &str) -> Self {
-        dbg!(&section_name);
         let section = elf.named_section_headers.get(section_name).unwrap();
         // get the section out of the elf at sh_offset
         let off = section.sh_offset as usize;
@@ -95,21 +91,19 @@ impl Vm {
         Self { elf, pc: 0, regs: [0; 11], memory }
     }
 
-    fn load_and_execute(mut self) {
+    fn load_and_execute(mut self) -> Result<u64> {
         let entrypoint = self.elf.named_symbols.get("entrypoint").unwrap();
         let text_section_size = self.elf.named_section_headers.get(TEXT).unwrap().sh_size;
-        dbg!(&entrypoint);
 
         // set the program counter to the entrypoint's first instruction
         self.pc = entrypoint.st_value;
 
-        loop {
+        while self.pc >= text_section_size {
             self.load_and_execute_next_instruction();
             self.pc += 8;
-            if self.pc >= text_section_size {
-                break;
-            }
         }
+
+        Ok(self.regs[0])
     }
 
     fn load_and_execute_next_instruction(&mut self) {
@@ -130,6 +124,22 @@ impl Vm {
 
     fn execute_ixn(&mut self, ixn: DecodedIxn) {
         let executable_ixn = ixn.to_instruction();
-        dbg!(executable_ixn);
+
+        match executable_ixn {
+            ExecutableIxn::Mov32Imm { dst, imm } => {
+                self.regs[dst as usize] = imm as u32 as u64;
+            }
+            ExecutableIxn::HorImm { dst, imm } => {
+                self.regs[dst as usize] |= (imm as u64).wrapping_shl(32);
+            }
+            ExecutableIxn::LoadDword { dst, src, off } => {
+                let addr = self.regs[src as usize] as usize + off as usize;
+                let data = self.memory.read_bytes_at(addr, 8).unwrap();
+                let data = u64::from_le_bytes(data.try_into().unwrap());
+                self.regs[dst as usize] = data;
+            }
+            ExecutableIxn::Return => {}
+            _ => {}
+        }
     }
 }

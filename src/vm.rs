@@ -92,13 +92,16 @@ impl Vm {
     }
 
     fn load_and_execute(mut self) -> Result<u64> {
-        let entrypoint = self.elf.named_symbols.get("entrypoint").unwrap();
-        let text_section_size = self.elf.named_section_headers.get(TEXT).unwrap().sh_size;
+        let entrypoint = self
+            .elf
+            .get_symbol("entrypoint")
+            .expect("Entrypoint must be present!");
+        let text_section_size = self.elf.get_section_header(TEXT).unwrap().sh_size;
 
         // set the program counter to the entrypoint's first instruction
         self.pc = entrypoint.st_value;
 
-        while self.pc >= text_section_size {
+        while self.pc < text_section_size {
             self.load_and_execute_next_instruction();
             self.pc += 8;
         }

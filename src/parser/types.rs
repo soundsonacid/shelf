@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use crate::parser::constants::*;
 
 #[derive(Debug, Clone, Copy)]
@@ -194,6 +196,14 @@ pub struct Elf64Shdr {
     /// each entry contains zero if the section does not hold a table of
     /// fixed size entries
     pub sh_entsize: u64,
+}
+
+impl Elf64Shdr {
+    pub fn range(&self) -> Range<usize> {
+        let start = self.sh_offset as usize;
+        let len = self.sh_size as usize;
+        start..start + len
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

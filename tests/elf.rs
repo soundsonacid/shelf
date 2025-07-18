@@ -10,6 +10,7 @@ fn test_elf() -> Result<()> {
     let elf = Elf::parse(&obj)?;
 
     let result = execute(elf)?;
+    println!("ro_data_section.so result: {result}");
     assert_eq!(result, 42);
 
     Ok(())

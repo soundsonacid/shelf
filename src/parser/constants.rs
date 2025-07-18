@@ -25,3 +25,7 @@ pub const SYMTAB: &str = ".symtab";
 pub const STRTAB: &str = ".strtab";
 pub const DYNSYM: &str = ".dynsym";
 pub const DYNSTR: &str = ".dynstr";
+pub const TEXT: &str = ".text";
+pub const RODATA: &str = ".rodata";
+pub const BSS_STACK: &str = ".bss.stack";
+pub const BSS_HEAP: &str = ".bss.heap";

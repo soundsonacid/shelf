@@ -2,10 +2,11 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 
-use crate::parser::{constants::*, types::{Elf64Ehdr, Elf64PHdr, Elf64Shdr, Elf64Sym, ElfIdent}};
+use crate::parser::constants::*;
+use crate::parser::types::{Elf64Ehdr, Elf64PHdr, Elf64Shdr, Elf64Sym, ElfIdent};
 
-pub mod types;
 pub mod constants;
+pub mod types;
 
 fn read_u8(bytes: &[u8], off: &mut usize) -> Result<u8> {
     let value = bytes[*off];
@@ -37,7 +38,13 @@ fn read<const N: usize>(bytes: &[u8], off: &mut usize) -> Result<[u8; N]> {
     Ok(value)
 }
 
-pub struct Elf {}
+pub struct Elf {
+    pub bytes: Vec<u8>,
+    pub program_header_table: Vec<Elf64PHdr>,
+    pub named_section_headers: HashMap<String, Elf64Shdr>,
+    pub named_symbols: HashMap<String, Elf64Sym>,
+    pub named_dynsym: HashMap<String, Elf64Sym>,
+}
 
 impl Elf {
     pub fn parse(bytes: &[u8]) -> Result<Self> {
@@ -65,11 +72,7 @@ impl Elf {
         let named_symbols = Self::parse_symtab(bytes, &named_section_headers, SYMTAB, STRTAB)?;
         let named_dynsym = Self::parse_symtab(bytes, &named_section_headers, DYNSYM, DYNSTR)?;
 
-        dbg!(&named_section_headers);
-        dbg!(&named_symbols);
-        dbg!(&named_dynsym);
-
-        todo!("finish elf parsing")
+        Ok(Self { bytes: bytes.to_owned(), program_header_table: p_hdr_table, named_section_headers, named_symbols, named_dynsym })
     }
 
     fn parse_header(bytes: &[u8], off: &mut usize) -> Result<Elf64Ehdr> {
@@ -139,7 +142,8 @@ impl Elf {
         let range = off..off + len;
         let bytes = bytes.get(range).unwrap();
 
-        // parse the data of the section header string table into null-terminated strings
+        // parse the data of the section header string table into null-terminated
+        // strings
         let mut string_map = HashMap::new();
         let mut offset = 0;
 
@@ -166,7 +170,7 @@ impl Elf {
         let range = off..off + len;
         let symtab_bytes = bytes.get(range).unwrap();
         let size = std::mem::size_of::<Elf64Sym>();
-        assert!(bytes.len().is_multiple_of(size));
+        // assert!(bytes.len().is_multiple_of(size));
 
         let num_symbols = symtab_bytes.len() / size;
         let mut symbols = Vec::with_capacity(num_symbols);

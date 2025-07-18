@@ -139,8 +139,8 @@ pub struct Elf64PHdr {
     /// holds the virtual address at which the first byte of the segment resides
     /// in memory
     pub p_vaddr: u64,
-    /// on systems for which physical addressing is relevant, this field is reserved
-    /// for the segment's physical address
+    /// on systems for which physical addressing is relevant, this field is
+    /// reserved for the segment's physical address
     pub p_paddr: u64,
     /// holds the number of bytes in the file image of the segment (may be zero)
     pub p_filesz: u64,

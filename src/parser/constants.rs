@@ -34,3 +34,5 @@ pub const REL_DYN: &str = ".rel.dyn";
 pub const SHF_WRITE: u64 = 0x1;
 pub const SHF_ALLOC: u64 = 0x2;
 pub const SHF_EXECINSTR: u64 = 0x4;
+
+pub const STT_FUNC: u8 = 2;

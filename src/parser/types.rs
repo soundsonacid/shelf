@@ -231,6 +231,14 @@ pub struct Elf64Sym {
     pub st_size: u64,
 }
 
+impl Elf64Sym {
+    // sbpf
+    /// Returns whether the symbol is a function.
+    pub fn is_function(&self) -> bool {
+        (self.st_info & 0xF) == STT_FUNC
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct Elf64Rel {

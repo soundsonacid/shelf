@@ -43,8 +43,8 @@ pub struct Elf {
     pub bytes: Vec<u8>,
     pub program_header_table: Vec<Elf64PHdr>,
     pub named_section_headers: HashMap<String, Elf64Shdr>,
-    pub named_symbols: Option<HashMap<String, Elf64Sym>>,
-    pub named_dynsym: Option<HashMap<String, Elf64Sym>>,
+    pub symbols: Vec<Elf64Sym>,
+    pub dynamic_symbols: Vec<Elf64Sym>,
     pub dynamic_relocations: Option<Vec<Elf64Rel>>,
 }
 
@@ -176,48 +176,24 @@ impl Elf {
             })
         };
 
-        let parse_symbol_name = |symbol: &Elf64Sym, name_table_bytes: &[u8]| -> Result<String> {
-            let start = symbol.st_name as usize;
-            let end = name_table_bytes[start..]
-                .iter()
-                .position(|i| *i == 0)
-                .ok_or(anyhow!("Failed to parse name"))?;
-            Ok(std::str::from_utf8(&name_table_bytes[start..start + end]).map(|s| s.to_owned())?)
+        let parse_table = |table: &'static str| -> Result<Vec<Elf64Sym>> {
+            let table_range = self
+                .get_section_header(table)
+                .expect("Invalid symbol table name")
+                .range();
+            let symbols_bytes = &self.bytes[table_range];
+
+            symbols_bytes
+                .chunks_exact(std::mem::size_of::<Elf64Sym>())
+                .map(|b| parse_symbol(b, &mut 0))
+                .collect::<Result<Vec<_>>>()
         };
 
-        macro_rules! parse_symbol_table {
-            ($self:ident, $table:ident, $names:ident, $field:ident) => {
-                let table_range = self
-                    .get_section_header($table)
-                    .expect("Invalid symbol table name")
-                    .range();
-                let symbols_bytes = &self.bytes[table_range];
+        let symbols = parse_table(SYMTAB)?;
+        let dynamic_symbols = parse_table(DYNSYM)?;
 
-                let symbols = symbols_bytes
-                    .chunks_exact(std::mem::size_of::<Elf64Sym>())
-                    .map(|b| parse_symbol(b, &mut 0))
-                    .collect::<Result<Vec<_>>>()?;
-
-                let name_range = self
-                    .get_section_header($names)
-                    .expect("Invalid symbol table name")
-                    .range();
-                let names_bytes = &self.bytes[name_range];
-
-                let named_symbols = symbols
-                    .iter()
-                    .map(|symbol| {
-                        let name = parse_symbol_name(symbol, names_bytes)?;
-                        Ok((name, *symbol))
-                    })
-                    .collect::<Result<HashMap<_, _>>>()?;
-
-                self.$field = Some(named_symbols);
-            };
-        }
-
-        parse_symbol_table!(self, SYMTAB, STRTAB, named_symbols);
-        parse_symbol_table!(self, DYNSYM, DYNSTR, named_dynsym);
+        self.symbols = symbols;
+        self.dynamic_symbols = dynamic_symbols;
 
         Ok(())
     }
@@ -246,22 +222,6 @@ impl Elf {
         Ok(())
     }
 
-    pub fn get_symbol(&self, symbol: &str) -> Option<&Elf64Sym> {
-        if let Some(symtab) = self.named_symbols.as_ref()
-            && let Some(symbol) = symtab.get(symbol)
-        {
-            return Some(symbol);
-        }
-
-        if let Some(dynsym) = self.named_dynsym.as_ref()
-            && let Some(symbol) = dynsym.get(symbol)
-        {
-            return Some(symbol);
-        }
-
-        None
-    }
-
     pub fn get_section_header(&self, name: &str) -> Option<&Elf64Shdr> {
         self.named_section_headers.get(name)
     }
@@ -271,5 +231,13 @@ impl Elf {
             .keys()
             .map(String::to_owned)
             .collect()
+    }
+
+    pub fn get_symbol_name(&self, name_table: &str, symbol: &Elf64Sym) -> String {
+        let name_table = self.named_section_headers.get(name_table).unwrap();
+        let name_offset = name_table.sh_offset + symbol.st_name as u64;
+        let slice = &self.bytes[name_offset as usize..];
+        let end = slice.iter().position(|b| *b == 0).unwrap();
+        str::from_utf8(&slice[..end]).unwrap().to_owned()
     }
 }

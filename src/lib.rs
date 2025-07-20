@@ -5,6 +5,5 @@ pub mod context;
 pub mod instruction;
 pub mod memory;
 pub mod parser;
-pub mod program;
 pub mod syscall;
 pub mod vm;

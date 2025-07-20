@@ -1,5 +1,6 @@
 use anyhow::Result;
 
+use crate::instruction::constants::MM_STACK_START;
 use crate::parser::Elf;
 use crate::parser::constants::*;
 
@@ -23,13 +24,28 @@ impl Memory {
     pub fn find_region_for_addr(&self, addr: usize) -> Option<&Region> {
         self.regions
             .iter()
-            .find(|r| (r.addr_start..=r.addr_start + r.len).contains(&addr))
+            .find(|r| (r.addr_start..r.addr_start + r.len).contains(&addr))
     }
 
     pub fn find_region_for_addr_mut(&mut self, addr: usize) -> Option<&mut Region> {
         self.regions
             .iter_mut()
-            .find(|r| (r.addr_start..=r.addr_start + r.len).contains(&addr))
+            .find(|r| (r.addr_start..r.addr_start + r.len).contains(&addr))
+    }
+
+    pub fn stack(&self) -> Option<&Region> {
+        self.regions.iter().find(|r| r.name == BSS_STACK)
+    }
+
+    pub fn stack_mut(&mut self) -> Option<&mut Region> {
+        self.regions.iter_mut().find(|r| r.name == BSS_STACK)
+    }
+
+    pub fn check_frame_pointer_bounds(&self, frame_pointer: u64) {
+        let stack_len = self.stack().unwrap().len as u64;
+        if !(MM_STACK_START <= frame_pointer || frame_pointer >= MM_STACK_START + stack_len) {
+            panic!("Stack overflow")
+        }
     }
 }
 

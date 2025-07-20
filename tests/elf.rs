@@ -36,8 +36,7 @@ fn test_interpret() -> Result<()> {
 
 #[test]
 fn test_syscall() -> Result<()> {
-    // test("tests/elfs/syscall_static.so", 0, None, Some(vec![("log",
-    // syscall::syscall_string)]))?;
+    test("tests/elfs/syscall_static.so", 0, None, Some(vec![("log", syscall::syscall_string)]))?;
 
     let config = Config { enabled_sbpf_versions: SBPFVersion::V0..=SBPFVersion::V0 };
     test("tests/elfs/syscall_reloc_64_32_sbpfv0.so", 0, Some(config), Some(vec![("log", syscall::syscall_string)]))?;

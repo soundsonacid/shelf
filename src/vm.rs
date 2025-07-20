@@ -30,7 +30,7 @@ impl State {
 
 impl Vm {
     pub fn new(ctx: ExecutionContext) -> Self {
-        dbg!(&ctx.memory);
+        // dbg!(&ctx.memory);
         let mut regs = [0; 11];
         // set up frame pointer
         regs[FRAME_PTR_REG] = 0x200000000 + 4096;
@@ -39,7 +39,7 @@ impl Vm {
 
     pub fn load_and_execute(mut self) -> Result<u64> {
         // set the program counter to the address of the entrypoint's first instruction
-        self.pc = self.ctx.program.entrypoint();
+        self.pc = self.ctx.program_entrypoint();
 
         while self.state.should_continue() {
             let ixn = self.load_next_instruction().expect("Next ixn");
@@ -64,7 +64,7 @@ impl Vm {
     fn execute_ixn(&mut self, ixn: DecodedIxn) -> Result<()> {
         let executable_ixn = ixn.to_instruction(&self.ctx.config);
         dbg!(&executable_ixn);
-        dbg!(&self.pc);
+        // dbg!(&self.pc);
 
         match executable_ixn {
             ExecutableIxn::Syscall { imm } => {
@@ -125,13 +125,10 @@ impl Vm {
     }
 
     fn push_stack(&mut self) {
-        let frame_pointer = self.regs[FRAME_PTR_REG] as usize;
-        let stack = self
-            .ctx
-            .memory
-            .find_region_for_addr_mut(frame_pointer)
-            .expect("Valid stack address");
-        let mut frame_pointer = frame_pointer - (POINTER_SIZE + REGISTER_SIZE + REGISTER_SIZE + REGISTER_SIZE + REGISTER_SIZE);
+        let frame_pointer = self.regs[FRAME_PTR_REG];
+        self.ctx.memory.check_frame_pointer_bounds(frame_pointer);
+        let stack = self.ctx.memory.stack_mut().expect("Stack");
+        let mut frame_pointer = (frame_pointer as usize) - (POINTER_SIZE + REGISTER_SIZE + REGISTER_SIZE + REGISTER_SIZE + REGISTER_SIZE);
         self.regs[FRAME_PTR_REG] = frame_pointer as u64; // set frame pointer to new value before mutating
         stack.write_u64(frame_pointer, self.pc); // save pc
         frame_pointer += POINTER_SIZE;
@@ -145,12 +142,10 @@ impl Vm {
     }
 
     fn pop_stack(&mut self) -> Result<()> {
-        let mut frame_pointer = self.regs[10] as usize;
-        let stack = self
-            .ctx
-            .memory
-            .find_region_for_addr(frame_pointer)
-            .expect("Valid stack address");
+        let frame_pointer = self.regs[FRAME_PTR_REG];
+        self.ctx.memory.check_frame_pointer_bounds(frame_pointer);
+        let mut frame_pointer = frame_pointer as usize;
+        let stack = self.ctx.memory.stack().expect("Stack");
 
         if frame_pointer == stack.addr_end {
             // we have reached the top-level return statement and should exit the program

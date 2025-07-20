@@ -4,6 +4,18 @@ use crate::config::{Config, SBPFVersion};
 #[derive(Debug)]
 pub struct Ixn(pub [u8; IXN_SIZE]);
 
+// msb                                                        lsb
+// +------------------------+----------------+----+----+--------+
+// |immediate               |offset          |src |dst |opcode  |
+// +------------------------+----------------+----+----+--------+
+
+// From least significant to most significant bit:
+//   8 bit opcode
+//   4 bit destination register (dst)
+//   4 bit source register (src)
+//   16 bit offset
+//   32 bit immediate (imm)
+
 impl Ixn {
     pub fn decode_ixn(self) -> DecodedIxn {
         let ixn = self.0;
@@ -326,6 +338,12 @@ impl DecodedIxn {
 }
 
 // from sbpf
+
+/// Byte offset of the immediate field in the instruction
+pub const BYTE_OFFSET_IMMEDIATE: usize = 4;
+/// Byte length of the immediate field in the instruction
+pub const BYTE_LEN_IMMEDIATE: usize = 4;
+
 /// BPF relocation types.
 #[allow(non_camel_case_types)]
 #[derive(Debug, PartialEq, Copy, Clone)]

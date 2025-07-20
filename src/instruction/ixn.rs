@@ -1,8 +1,6 @@
 use super::constants::*;
 use crate::config::{Config, SBPFVersion};
 
-pub const IXN_SIZE: usize = 8;
-
 #[derive(Debug)]
 pub struct Ixn(pub [u8; IXN_SIZE]);
 
@@ -35,6 +33,7 @@ pub enum ExecutableIxn {
     LoadHalf { dst: u8, src: u8, off: i16 },  // ldxh dst, [src + off]
     LoadWord { dst: u8, src: u8, off: i16 },  // ldxw dst, [src + off]
     LoadDword { dst: u8, src: u8, off: i16 }, // ldxdw dst, [src + off]
+    LoadDwordImm { dst: u8, imm: i32 },       // lddw dst, imm
 
     StoreByte { dst: u8, src: u8, off: i16 },  // stxb [dst + off], src
     StoreHalf { dst: u8, src: u8, off: i16 },  // stxh [dst + off], src
@@ -163,12 +162,8 @@ pub enum ExecutableIxn {
     SDiv64Imm { dst: u8, imm: i32 },
     SRem64 { dst: u8, src: u8 },
     SRem64Imm { dst: u8, imm: i32 },
-
-    // Unknown instruction
-    Unknown { opcode: u8 },
 }
 
-// FIXME unreachable patterns
 impl DecodedIxn {
     pub fn to_instruction(&self, config: &Config) -> ExecutableIxn {
         match self.opcode {
@@ -182,6 +177,8 @@ impl DecodedIxn {
             LD_2B_REG => ExecutableIxn::LoadHalf { dst: self.dst, src: self.src, off: self.off },
             LD_4B_REG => ExecutableIxn::LoadWord { dst: self.dst, src: self.src, off: self.off },
             LD_8B_REG => ExecutableIxn::LoadDword { dst: self.dst, src: self.src, off: self.off },
+
+            LD_DW_IMM if config.below_sbpf_version(SBPFVersion::V2) => ExecutableIxn::LoadDwordImm { dst: self.dst, imm: self.imm },
 
             // Store operations
             ST_B_REG => ExecutableIxn::StoreByte { dst: self.dst, src: self.src, off: self.off },
@@ -326,4 +323,42 @@ impl DecodedIxn {
             _ => panic!("Unknown instruction"),
         }
     }
+}
+
+// from sbpf
+/// BPF relocation types.
+#[allow(non_camel_case_types)]
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum BpfRelocationType {
+    /// No relocation, placeholder
+    R_Bpf_None = 0,
+    /// R_BPF_64_64 relocation type is used for ld_imm64 instruction.
+    /// The actual to-be-relocated data (0 or section offset) is
+    /// stored at r_offset + 4 and the read/write data bitsize is 32
+    /// (4 bytes). The relocation can be resolved with the symbol
+    /// value plus implicit addend.
+    R_Bpf_64_64 = 1,
+    /// 64 bit relocation of a ldxdw instruction.  The ldxdw
+    /// instruction occupies two instruction slots. The 64-bit address
+    /// to load from is split into the 32-bit imm field of each
+    /// slot. The first slot's pre-relocation imm field contains the
+    /// virtual address (typically same as the file offset) of the
+    /// location to load. Relocation involves calculating the
+    /// post-load 64-bit physical address referenced by the imm field
+    /// and writing that physical address back into the imm fields of
+    /// the ldxdw instruction.
+    R_Bpf_64_Relative = 8,
+    /// Relocation of a call instruction.  The existing imm field
+    /// contains either an offset of the instruction to jump to (think
+    /// local function call) or a special value of "-1".  If -1 the
+    /// symbol must be looked up in the symbol table.  The relocation
+    /// entry contains the symbol number to call.  In order to support
+    /// both local jumps and calling external symbols a 32-bit hash is
+    /// computed and stored in the the call instruction's 32-bit imm
+    /// field.  The hash is used later to look up the 64-bit address
+    /// to jump to.  In the case of a local jump the hash is
+    /// calculated using the current program counter and in the case
+    /// of a symbol the hash is calculated using the name of the
+    /// symbol.
+    R_Bpf_64_32 = 10,
 }

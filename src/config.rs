@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 
-#[derive(PartialEq, PartialOrd)]
+#[derive(PartialEq, PartialOrd, Debug)]
 pub enum SBPFVersion {
     V0,
     V1,
@@ -9,7 +9,7 @@ pub enum SBPFVersion {
 }
 
 pub struct Config {
-    enabled_sbpf_versions: RangeInclusive<SBPFVersion>,
+    pub enabled_sbpf_versions: RangeInclusive<SBPFVersion>,
 }
 
 impl Default for Config {
@@ -21,5 +21,9 @@ impl Default for Config {
 impl Config {
     pub fn has_sbpf_version_enabled(&self, version: SBPFVersion) -> bool {
         self.enabled_sbpf_versions.contains(&version)
+    }
+
+    pub fn below_sbpf_version(&self, version: SBPFVersion) -> bool {
+        version > *self.enabled_sbpf_versions.end()
     }
 }

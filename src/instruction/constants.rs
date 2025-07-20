@@ -5,7 +5,8 @@ pub const EF_SBPF_V2: u32 = 0x20;
 /// Maximum number of instructions in an eBPF program.
 pub const PROG_MAX_INSNS: usize = 65_536;
 /// Size of an eBPF instructions, in bytes.
-pub const INSN_SIZE: usize = 8;
+pub const IXN_SIZE: usize = 8;
+pub const IXN_SIZE_U64: u64 = IXN_SIZE as u64;
 /// Frame pointer register
 pub const FRAME_PTR_REG: usize = 10;
 /// First scratch register

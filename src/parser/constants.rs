@@ -29,6 +29,7 @@ pub const TEXT: &str = ".text";
 pub const RODATA: &str = ".rodata";
 pub const BSS_STACK: &str = ".bss.stack";
 pub const BSS_HEAP: &str = ".bss.heap";
+pub const REL_DYN: &str = ".rel.dyn";
 
 pub const SHF_WRITE: u64 = 0x1;
 pub const SHF_ALLOC: u64 = 0x2;

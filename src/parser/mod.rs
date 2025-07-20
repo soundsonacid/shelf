@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::{Result, anyhow};
 
 use crate::parser::constants::*;
-use crate::parser::types::{Elf64Ehdr, Elf64PHdr, Elf64Shdr, Elf64Sym, ElfIdent};
+use crate::parser::types::{Elf64Ehdr, Elf64PHdr, Elf64Rel, Elf64Shdr, Elf64Sym, ElfIdent};
 
 pub mod constants;
 pub mod types;
@@ -45,6 +45,7 @@ pub struct Elf {
     pub named_section_headers: HashMap<String, Elf64Shdr>,
     pub named_symbols: Option<HashMap<String, Elf64Sym>>,
     pub named_dynsym: Option<HashMap<String, Elf64Sym>>,
+    pub dynamic_relocations: Option<Vec<Elf64Rel>>,
 }
 
 impl Elf {
@@ -67,6 +68,8 @@ impl Elf {
         let mut elf = Self { bytes: bytes.to_owned(), program_header_table, named_section_headers, ..Default::default() };
 
         elf.parse_symbol_tables()?;
+        elf.parse_relocations()?;
+
         Ok(elf)
     }
 
@@ -215,6 +218,30 @@ impl Elf {
 
         parse_symbol_table!(self, SYMTAB, STRTAB, named_symbols);
         parse_symbol_table!(self, DYNSYM, DYNSTR, named_dynsym);
+
+        Ok(())
+    }
+
+    fn parse_relocations(&mut self) -> Result<()> {
+        let parse_relocation = |bytes: &[u8], off: &mut usize| -> Result<Elf64Rel> { Ok(Elf64Rel { r_offset: read_u64(bytes, off)?, r_info: read_u64(bytes, off)? }) };
+
+        let dynamic_relocations = if let Some(dynamic_relocations) = self.named_section_headers.get(REL_DYN) {
+            let start = dynamic_relocations.sh_offset as usize;
+            let len = dynamic_relocations.sh_size as usize;
+            let range = start..start + len;
+            let bytes = &self.bytes[range];
+            let chunks = bytes.chunks(std::mem::size_of::<Elf64Rel>());
+
+            Some(
+                chunks
+                    .map(|chunk| parse_relocation(chunk, &mut 0).unwrap())
+                    .collect(),
+            )
+        } else {
+            None
+        };
+
+        self.dynamic_relocations = dynamic_relocations;
 
         Ok(())
     }

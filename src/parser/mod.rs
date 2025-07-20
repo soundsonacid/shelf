@@ -141,7 +141,7 @@ impl Elf {
     fn parse_section_header_names(elf_bytes: &[u8], string_table_index: usize, section_header_table: &[Elf64Shdr]) -> Result<HashMap<String, Elf64Shdr>> {
         let string_table_header = section_header_table[string_table_index];
         let range = string_table_header.range();
-        let string_table_bytes = elf_bytes.get(range).ok_or(anyhow!("Invalid range"))?;
+        let string_table_bytes = &elf_bytes[range];
 
         let parse_header_name = |header: &Elf64Shdr| -> Result<String> {
             let start = header.sh_name as usize;
@@ -188,10 +188,7 @@ impl Elf {
                     .get_section_header($table)
                     .expect("Invalid symbol table name")
                     .range();
-                let symbols_bytes = self
-                    .bytes
-                    .get(table_range)
-                    .ok_or(anyhow!("Invalid range"))?;
+                let symbols_bytes = &self.bytes[table_range];
 
                 let symbols = symbols_bytes
                     .chunks_exact(std::mem::size_of::<Elf64Sym>())
@@ -202,7 +199,7 @@ impl Elf {
                     .get_section_header($names)
                     .expect("Invalid symbol table name")
                     .range();
-                let names_bytes = self.bytes.get(name_range).ok_or(anyhow!("Invalid range"))?;
+                let names_bytes = &self.bytes[name_range];
 
                 let named_symbols = symbols
                     .iter()
@@ -240,5 +237,12 @@ impl Elf {
 
     pub fn get_section_header(&self, name: &str) -> Option<&Elf64Shdr> {
         self.named_section_headers.get(name)
+    }
+
+    pub fn section_names(&self) -> Vec<String> {
+        self.named_section_headers
+            .keys()
+            .map(String::to_owned)
+            .collect()
     }
 }

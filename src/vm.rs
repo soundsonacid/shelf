@@ -1,122 +1,69 @@
 use anyhow::Result;
 
+use crate::config::Config;
 use crate::instruction::ixn::{DecodedIxn, ExecutableIxn, IXN_SIZE, Ixn};
+use crate::memory::Memory;
 use crate::parser::Elf;
-use crate::parser::constants::*;
 
-pub fn execute(elf: Elf) -> Result<u64> {
-    // load .text section
-    // load .rodata section
-    // load .bss.stack section
-    // load .bss.heap section
-    let text_region = Region::from_section(&elf, TEXT);
-    let rodata_region = Region::from_section(&elf, RODATA);
-    let bss_stack_region = Region::from_section(&elf, BSS_STACK);
-    let bss_heap_region = Region::from_section(&elf, BSS_HEAP);
+const REGISTER_SIZE: usize = std::mem::size_of::<usize>();
+const POINTER_SIZE: usize = std::mem::size_of::<usize>();
 
-    let memory = Memory::new(vec![text_region, rodata_region, bss_stack_region, bss_heap_region]);
-
-    let vm = Vm::new(elf, memory);
-    vm.load_and_execute()
-}
-
-#[derive(Debug)]
-struct Memory {
-    regions: Vec<Region>,
-}
-
-impl Memory {
-    fn new(regions: Vec<Region>) -> Self {
-        Self { regions }
-    }
-
-    fn read_bytes_at(&self, addr: usize, len: usize) -> Option<&[u8]> {
-        let region = self.find_region_for_addr(addr).unwrap();
-        let relative_addr = addr.checked_sub(region.addr_start).unwrap();
-        let range = relative_addr..relative_addr + len;
-        region.data.get(range)
-    }
-
-    fn find_region_for_addr(&self, addr: usize) -> Option<&Region> {
-        self.regions
-            .iter()
-            .find(|r| (r.addr_start..r.addr_start + r.len).contains(&addr))
-    }
-}
-
-struct Region {
-    name: String,
-    addr_start: usize,
-    len: usize,
-    data: Vec<u8>,
-}
-
-impl std::fmt::Debug for Region {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Region")
-            .field("name", &self.name)
-            .field("addr_start", &self.addr_start)
-            .field("len", &self.len)
-            .finish()
-    }
-}
-
-impl Region {
-    fn from_section(elf: &Elf, section_name: &str) -> Self {
-        let section = elf.named_section_headers.get(section_name).unwrap();
-        // get the section out of the elf at sh_offset
-        let off = section.sh_offset as usize;
-        let len = section.sh_size as usize;
-        let data = if section.sh_type == SHT_NOBITS {
-            Vec::with_capacity(len)
-        } else {
-            let range = off..off + len;
-            elf.bytes.get(range).unwrap().to_owned()
-        };
-
-        // when being loaded / executed, the section should be "placed" at sh_addr
-        Self { name: section_name.to_owned(), addr_start: section.sh_addr as usize, len, data }
-    }
-}
-
-struct Vm {
+pub struct Vm {
     elf: Elf,
     memory: Memory,
+    config: Config,
     pc: u64,
     regs: [u64; 11],
+    state: State,
+}
+
+#[derive(Default, Debug)]
+enum State {
+    #[default]
+    Continue,
+    Break,
+}
+
+impl State {
+    fn should_continue(&self) -> bool {
+        matches!(self, State::Continue)
+    }
 }
 
 impl Vm {
-    fn new(elf: Elf, memory: Memory) -> Self {
-        Self { elf, pc: 0, regs: [0; 11], memory }
+    pub fn new(elf: Elf, memory: Memory, config: Config) -> Self {
+        dbg!(&elf.named_symbols);
+        let mut regs = [0; 11];
+        // set up frame pointer
+        regs[10] = 0x200000000 + 4096;
+        Self { elf, memory, config, pc: 0, regs, state: State::Continue }
     }
 
-    fn load_and_execute(mut self) -> Result<u64> {
+    pub fn load_and_execute(mut self) -> Result<u64> {
         let entrypoint = self
             .elf
             .get_symbol("entrypoint")
             .expect("Entrypoint must be present!");
-        let text_section_size = self.elf.get_section_header(TEXT).unwrap().sh_size;
+        dbg!(&entrypoint);
 
         // set the program counter to the entrypoint's first instruction
         self.pc = entrypoint.st_value;
 
-        while self.pc < text_section_size {
-            self.load_and_execute_next_instruction();
+        while self.state.should_continue() {
+            let ixn = self.load_next_instruction().expect("Next ixn");
             self.pc += 8;
+            self.execute_instruction(ixn)?;
         }
 
         Ok(self.regs[0])
     }
 
-    fn load_and_execute_next_instruction(&mut self) {
-        if let Some(ixn) = self.read_next_instruction() {
-            let decoded_ixn = ixn.decode_ixn();
-            self.execute_ixn(decoded_ixn)
-        }
+    fn execute_instruction(&mut self, ixn: Ixn) -> Result<()> {
+        let decoded_ixn = ixn.decode_ixn();
+        self.execute_ixn(decoded_ixn)
     }
 
-    fn read_next_instruction(&mut self) -> Option<Ixn> {
+    fn load_next_instruction(&mut self) -> Option<Ixn> {
         let ixn_bytes = self
             .memory
             .read_bytes_at(self.pc as usize, IXN_SIZE)?
@@ -125,8 +72,9 @@ impl Vm {
         Some(Ixn(ixn_bytes))
     }
 
-    fn execute_ixn(&mut self, ixn: DecodedIxn) {
-        let executable_ixn = ixn.to_instruction();
+    fn execute_ixn(&mut self, ixn: DecodedIxn) -> Result<()> {
+        let executable_ixn = ixn.to_instruction(&self.config);
+        dbg!(&executable_ixn);
 
         match executable_ixn {
             ExecutableIxn::Mov32Imm { dst, imm } => {
@@ -141,8 +89,101 @@ impl Vm {
                 let data = u64::from_le_bytes(data.try_into().unwrap());
                 self.regs[dst as usize] = data;
             }
-            ExecutableIxn::Return => {}
+            ExecutableIxn::Call { imm } => {
+                self.push_stack();
+                // dbg!(&self.pc);
+                let mut temp_pc = self.pc as i32;
+                let jump = imm * IXN_SIZE as i32;
+                temp_pc += jump;
+                self.pc = temp_pc as u64;
+                // dbg!(&self.pc);
+            }
+            ExecutableIxn::Return => {
+                self.pop_stack()?;
+                // dbg!(&self.state);
+            }
+            ExecutableIxn::Exit => self.state = State::Break,
             _ => {}
         }
+
+        Ok(())
+    }
+
+    fn push_stack(&mut self) {
+        // dbg!("push stack");
+        let frame_pointer = self.regs[10] as usize;
+        let stack = self
+            .memory
+            .find_region_for_addr_mut(frame_pointer)
+            .expect("Valid stack address");
+
+        let mut frame_pointer = frame_pointer - (POINTER_SIZE + REGISTER_SIZE + REGISTER_SIZE + REGISTER_SIZE + REGISTER_SIZE);
+
+        // set frame pointer to new value before mutating
+        self.regs[10] = frame_pointer as u64;
+
+        // save pc
+        stack.write_u64(frame_pointer, self.pc);
+        frame_pointer += POINTER_SIZE;
+
+        // save r6
+        stack.write_u64(frame_pointer, self.regs[6]);
+        frame_pointer += REGISTER_SIZE;
+
+        // save r7
+        stack.write_u64(frame_pointer, self.regs[7]);
+        frame_pointer += REGISTER_SIZE;
+
+        // save r8
+        stack.write_u64(frame_pointer, self.regs[8]);
+        frame_pointer += REGISTER_SIZE;
+
+        // save r9
+        stack.write_u64(frame_pointer, self.regs[9]);
+    }
+
+    fn pop_stack(&mut self) -> Result<()> {
+        let mut frame_pointer = self.regs[10] as usize;
+        let stack = self
+            .memory
+            .find_region_for_addr(frame_pointer)
+            .expect("Valid stack address");
+
+        dbg!(&frame_pointer);
+        dbg!(&stack.addr_end);
+        // we have reached the top-level return statement and should exit the program
+        if frame_pointer == stack.addr_end {
+            self.state = State::Break;
+            return Ok(());
+        }
+
+        // read pc
+        let pc = stack.read_u64(frame_pointer)?;
+        self.pc = pc;
+        frame_pointer += POINTER_SIZE;
+
+        // read r6
+        let r6 = stack.read_u64(frame_pointer)?;
+        self.regs[6] = r6;
+        frame_pointer += POINTER_SIZE;
+
+        // read r7
+        let r7 = stack.read_u64(frame_pointer)?;
+        self.regs[7] = r7;
+        frame_pointer += POINTER_SIZE;
+
+        // read r8
+        let r8 = stack.read_u64(frame_pointer)?;
+        self.regs[8] = r8;
+        frame_pointer += POINTER_SIZE;
+
+        // read r9
+        let r9 = stack.read_u64(frame_pointer)?;
+        self.regs[9] = r9;
+        frame_pointer += POINTER_SIZE;
+
+        // set frame pointer to new value after mutating
+        self.regs[10] = frame_pointer as u64;
+        Ok(())
     }
 }

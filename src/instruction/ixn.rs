@@ -1,4 +1,5 @@
 use super::constants::*;
+use crate::config::{Config, SBPFVersion};
 
 pub const IXN_SIZE: usize = 8;
 
@@ -169,7 +170,7 @@ pub enum ExecutableIxn {
 
 // FIXME unreachable patterns
 impl DecodedIxn {
-    pub fn to_instruction(&self) -> ExecutableIxn {
+    pub fn to_instruction(&self, config: &Config) -> ExecutableIxn {
         match self.opcode {
             // Load operations
             LD_B_REG => ExecutableIxn::LoadByte { dst: self.dst, src: self.src, off: self.off },
@@ -286,9 +287,9 @@ impl DecodedIxn {
             // Special operations
             CALL_IMM => ExecutableIxn::Call { imm: self.imm },
             CALL_REG => ExecutableIxn::CallReg { dst: self.dst, src: self.src },
-            EXIT => ExecutableIxn::Exit,
+            EXIT if !config.has_sbpf_version_enabled(SBPFVersion::V3) => ExecutableIxn::Exit,
             RETURN => ExecutableIxn::Return,
-            SYSCALL => ExecutableIxn::Syscall { imm: self.imm },
+            SYSCALL if config.has_sbpf_version_enabled(SBPFVersion::V3) => ExecutableIxn::Syscall { imm: self.imm },
 
             // Endianness operations
             LE => ExecutableIxn::Le { dst: self.dst, imm: self.imm },
@@ -322,7 +323,7 @@ impl DecodedIxn {
             SREM64_IMM => ExecutableIxn::SRem64Imm { dst: self.dst, imm: self.imm },
 
             // Unknown
-            _ => ExecutableIxn::Unknown { opcode: self.opcode },
+            _ => panic!("Unknown instruction"),
         }
     }
 }

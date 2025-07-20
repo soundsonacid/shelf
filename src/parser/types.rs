@@ -204,6 +204,10 @@ impl Elf64Shdr {
         let len = self.sh_size as usize;
         start..start + len
     }
+
+    pub fn should_alloc(&self) -> bool {
+        (self.sh_flags & SHF_ALLOC) != 0
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

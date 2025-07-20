@@ -1,17 +1,13 @@
 use anyhow::Result;
 
-use crate::config::Config;
+use crate::context::ExecutionContext;
 use crate::instruction::ixn::{DecodedIxn, ExecutableIxn, IXN_SIZE, Ixn};
-use crate::memory::Memory;
-use crate::parser::Elf;
 
 const REGISTER_SIZE: usize = std::mem::size_of::<usize>();
 const POINTER_SIZE: usize = std::mem::size_of::<usize>();
 
 pub struct Vm {
-    elf: Elf,
-    memory: Memory,
-    config: Config,
+    pub ctx: ExecutionContext,
     pc: u64,
     regs: [u64; 11],
     state: State,
@@ -31,40 +27,30 @@ impl State {
 }
 
 impl Vm {
-    pub fn new(elf: Elf, memory: Memory, config: Config) -> Self {
-        dbg!(&elf.named_symbols);
+    pub fn new(ctx: ExecutionContext) -> Self {
         let mut regs = [0; 11];
         // set up frame pointer
         regs[10] = 0x200000000 + 4096;
-        Self { elf, memory, config, pc: 0, regs, state: State::Continue }
+        Self { ctx, pc: 0, regs, state: State::Continue }
     }
 
     pub fn load_and_execute(mut self) -> Result<u64> {
-        let entrypoint = self
-            .elf
-            .get_symbol("entrypoint")
-            .expect("Entrypoint must be present!");
-        dbg!(&entrypoint);
-
-        // set the program counter to the entrypoint's first instruction
-        self.pc = entrypoint.st_value;
+        // set the program counter to the address of the entrypoint's first instruction
+        self.pc = self.ctx.program.entrypoint();
 
         while self.state.should_continue() {
             let ixn = self.load_next_instruction().expect("Next ixn");
             self.pc += 8;
-            self.execute_instruction(ixn)?;
+            let decoded_ixn = ixn.decode_ixn();
+            self.execute_ixn(decoded_ixn)?;
         }
 
         Ok(self.regs[0])
     }
 
-    fn execute_instruction(&mut self, ixn: Ixn) -> Result<()> {
-        let decoded_ixn = ixn.decode_ixn();
-        self.execute_ixn(decoded_ixn)
-    }
-
     fn load_next_instruction(&mut self) -> Option<Ixn> {
         let ixn_bytes = self
+            .ctx
             .memory
             .read_bytes_at(self.pc as usize, IXN_SIZE)?
             .try_into()
@@ -73,34 +59,38 @@ impl Vm {
     }
 
     fn execute_ixn(&mut self, ixn: DecodedIxn) -> Result<()> {
-        let executable_ixn = ixn.to_instruction(&self.config);
+        let executable_ixn = ixn.to_instruction(&self.ctx.config);
         dbg!(&executable_ixn);
 
         match executable_ixn {
+            ExecutableIxn::Syscall { imm } => {
+                let syscall = self.ctx.syscall(imm as u32);
+                syscall(self, self.regs[1], self.regs[2], self.regs[3], self.regs[4], self.regs[5])
+            }
             ExecutableIxn::Mov32Imm { dst, imm } => {
                 self.regs[dst as usize] = imm as u32 as u64;
+            }
+            ExecutableIxn::Mov64Imm { dst, imm } => {
+                self.regs[dst as usize] = imm as u64;
             }
             ExecutableIxn::HorImm { dst, imm } => {
                 self.regs[dst as usize] |= (imm as u64).wrapping_shl(32);
             }
             ExecutableIxn::LoadDword { dst, src, off } => {
                 let addr = self.regs[src as usize] as usize + off as usize;
-                let data = self.memory.read_bytes_at(addr, 8).unwrap();
+                let data = self.ctx.memory.read_bytes_at(addr, 8).unwrap();
                 let data = u64::from_le_bytes(data.try_into().unwrap());
                 self.regs[dst as usize] = data;
             }
             ExecutableIxn::Call { imm } => {
                 self.push_stack();
-                // dbg!(&self.pc);
                 let mut temp_pc = self.pc as i32;
                 let jump = imm * IXN_SIZE as i32;
                 temp_pc += jump;
                 self.pc = temp_pc as u64;
-                // dbg!(&self.pc);
             }
             ExecutableIxn::Return => {
                 self.pop_stack()?;
-                // dbg!(&self.state);
             }
             ExecutableIxn::Exit => self.state = State::Break,
             _ => {}
@@ -110,9 +100,9 @@ impl Vm {
     }
 
     fn push_stack(&mut self) {
-        // dbg!("push stack");
         let frame_pointer = self.regs[10] as usize;
         let stack = self
+            .ctx
             .memory
             .find_region_for_addr_mut(frame_pointer)
             .expect("Valid stack address");
@@ -145,12 +135,11 @@ impl Vm {
     fn pop_stack(&mut self) -> Result<()> {
         let mut frame_pointer = self.regs[10] as usize;
         let stack = self
+            .ctx
             .memory
             .find_region_for_addr(frame_pointer)
             .expect("Valid stack address");
 
-        dbg!(&frame_pointer);
-        dbg!(&stack.addr_end);
         // we have reached the top-level return statement and should exit the program
         if frame_pointer == stack.addr_end {
             self.state = State::Break;

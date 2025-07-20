@@ -54,8 +54,6 @@ impl std::fmt::Debug for Region {
 
 impl Region {
     pub fn from_section(elf: &Elf, section_name: &str) -> Option<Self> {
-        dbg!(&section_name);
-        dbg!(&elf.named_section_headers);
         let section = elf.named_section_headers.get(section_name)?;
         if !section.should_alloc() {
             return None;
@@ -85,5 +83,10 @@ impl Region {
     pub fn read_u64(&self, addr_start: usize) -> Result<u64> {
         let relative_addr = addr_start - self.addr_start;
         Ok(u64::from_le_bytes(self.data[relative_addr..relative_addr + 8].try_into()?))
+    }
+
+    pub fn read_bytes(&self, addr_start: usize, len: usize) -> &[u8] {
+        let relative_addr = addr_start - self.addr_start;
+        &self.data[relative_addr..relative_addr + len]
     }
 }

@@ -1,41 +1,50 @@
 use std::fs;
 
 use anyhow::Result;
-use shelf::config::Config;
-use shelf::execute;
+use shelf::context::{ExecutionContext, Syscall, hash_symbol_name};
 use shelf::parser::Elf;
+use shelf::vm::Vm;
 
-fn test(path: &'static str, expected_result: u64) -> Result<()> {
+fn test(path: &'static str, expected_result: u64, syscalls: Option<Vec<(String, Syscall)>>) -> Result<()> {
     let obj = fs::read(path)?;
     let elf = Elf::parse(&obj)?;
+    let mut ctx = ExecutionContext::new_from_elf(elf);
 
-    let result = execute(elf, Config::default())?;
+    if let Some(syscalls) = syscalls {
+        syscalls.iter().for_each(|(name, syscall)| {
+            ctx.register_syscall(hash_symbol_name(name.as_bytes()), *syscall);
+        })
+    }
+    let vm = Vm::new(ctx);
+    let result = vm.load_and_execute()?;
     println!("{path} result: {result}");
     assert_eq!(result, expected_result);
 
     Ok(())
 }
-#[test]
-fn test_rodata_section() -> Result<()> {
-    test("tests/elfs/rodata_section.so", 42)
-}
 
 #[test]
-fn test_reloc_64_64() -> Result<()> {
-    test("tests/elfs/reloc_64_64.so", 0)
-}
-
-#[test]
-fn test_strict_header() -> Result<()> {
-    test("tests/elfs/strict_header.so", 42)
-}
-
-#[test]
-fn test_struct_func_pointer() -> Result<()> {
-    test("tests/elfs/struct_func_pointer.so", 0x102030405060708)
+fn test_interpret() -> Result<()> {
+    test("tests/elfs/rodata_section.so", 42, None)?;
+    test("tests/elfs/reloc_64_64.so", 0, None)?;
+    test("tests/elfs/strict_header.so", 42, None)?;
+    test("tests/elfs/struct_func_pointer.so", 0x102030405060708, None)?;
+    Ok(())
 }
 
 #[test]
 fn test_syscall() -> Result<()> {
-    test("tests/elfs/syscall_static.so", 0)
+    let syscall_name = "log";
+    let syscall = |vm: *mut Vm, addr_start: u64, len: u64, _r3: u64, _r4: u64, _r5: u64| unsafe {
+        let region = (&*vm)
+            .ctx
+            .memory
+            .find_region_for_addr(addr_start as usize)
+            .unwrap();
+        let str_bytes = region.read_bytes(addr_start as usize, len as usize);
+        let msg = str::from_utf8(str_bytes).unwrap();
+        println!("log: {msg}");
+    };
+
+    test("tests/elfs/syscall_static.so", 0, Some(vec![(syscall_name.to_owned(), syscall)]))
 }

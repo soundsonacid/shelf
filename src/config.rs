@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 
-#[derive(PartialEq, PartialOrd, Debug)]
+#[derive(PartialEq, PartialOrd, Debug, Copy, Clone)]
 pub enum SBPFVersion {
     V0,
     V1,
@@ -8,6 +8,7 @@ pub enum SBPFVersion {
     V3,
 }
 
+#[derive(Clone)]
 pub struct Config {
     pub enabled_sbpf_versions: RangeInclusive<SBPFVersion>,
 }

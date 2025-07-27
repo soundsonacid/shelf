@@ -178,6 +178,7 @@ pub enum ExecutableIxn {
 
 impl DecodedIxn {
     pub fn to_instruction(&self, config: &Config) -> ExecutableIxn {
+        dbg!(&self);
         match self.opcode {
             // Load operations
             LD_B_REG => ExecutableIxn::LoadByte { dst: self.dst, src: self.src, off: self.off },
@@ -350,7 +351,7 @@ pub const BYTE_LEN_IMMEDIATE: usize = 4;
 pub enum BpfRelocationType {
     /// No relocation, placeholder
     R_Bpf_None = 0,
-    /// R_BPF_64_64 relocation type is used for ld_imm64 instruction.
+    /// R_BPF_64_64 relocation type is used for lddw / ld_imm64 instruction.
     /// The actual to-be-relocated data (0 or section offset) is
     /// stored at r_offset + 4 and the read/write data bitsize is 32
     /// (4 bytes). The relocation can be resolved with the symbol

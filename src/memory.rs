@@ -47,6 +47,16 @@ impl Memory {
             panic!("Stack overflow")
         }
     }
+
+    pub fn translate_vm_addr(&self, vm_addr: usize) -> usize {
+        let containing_region = self
+            .regions
+            .iter()
+            .find(|r| r.contains_vm_addr(vm_addr))
+            .unwrap();
+
+        vm_addr - containing_region.addr_start
+    }
 }
 
 pub struct Region {
@@ -104,5 +114,14 @@ impl Region {
     pub fn read_bytes(&self, addr_start: usize, len: usize) -> &[u8] {
         let relative_addr = addr_start - self.addr_start;
         &self.data[relative_addr..relative_addr + len]
+    }
+
+    pub fn contains_vm_addr(&self, vm_addr: usize) -> bool {
+        dbg!(&self.name);
+        dbg!(&self.addr_start);
+        dbg!(&self.addr_end);
+        dbg!(self.addr_start <= vm_addr);
+        dbg!(vm_addr <= self.addr_end);
+        self.addr_start <= vm_addr && vm_addr <= self.addr_end
     }
 }

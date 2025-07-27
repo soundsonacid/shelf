@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::config::{Config, SBPFVersion};
-use crate::instruction::constants::IXN_SIZE_U64;
+use crate::instruction::constants::{self, IXN_SIZE, IXN_SIZE_U64};
 use crate::instruction::ixn::{BYTE_LEN_IMMEDIATE, BYTE_OFFSET_IMMEDIATE, BpfRelocationType};
 use crate::memory::{Memory, Region};
 use crate::parser::Elf;
@@ -81,16 +81,57 @@ impl ExecutionContext {
                         let addr = reloc.r_offset as usize;
                         let sym = reloc.r_info.wrapping_shr(32);
                         let reloc_type = (reloc.r_info & 0xFFFFFFFF) as u32;
-                        // dbg!(&reloc);
-                        // dbg!(addr);
-                        // dbg!(sym);
+                        dbg!(&reloc);
+                        dbg!(addr);
+                        dbg!(sym);
+                        dbg!(&reloc_type);
                         match reloc_type {
                             _ if reloc_type == BpfRelocationType::R_Bpf_None as u32 => {}
                             _ if reloc_type == BpfRelocationType::R_Bpf_64_64 as u32 => {
                                 dbg!("R_Bpf_64_64");
+                                let symbol = elf.dynamic_symbols[sym as usize];
+
+                                let offset = reloc.r_offset as usize;
+                                let imm_offset = offset + BYTE_OFFSET_IMMEDIATE;
+                                let range = imm_offset..imm_offset + BYTE_LEN_IMMEDIATE;
+                                let referenced_addr = u32::from_le_bytes(elf.bytes[range].try_into().unwrap());
+                                dbg!(&referenced_addr);
+                                let mut relocation_addr = symbol.st_value + referenced_addr as u64;
+
+                                if relocation_addr < constants::MM_RODATA_START {
+                                    relocation_addr = constants::MM_RODATA_START.saturating_add(relocation_addr);
+                                }
+
+                                dbg!(&relocation_addr);
+                                dbg!(&relocation_addr.to_le_bytes());
+
+                                let region = self.memory.find_region_for_addr_mut(imm_offset).unwrap();
+                                let low_relative_addr = imm_offset - region.addr_start;
+                                let high_relative_addr = low_relative_addr + IXN_SIZE;
+                                dbg!(&low_relative_addr);
+                                dbg!(&high_relative_addr);
+                                region.data[low_relative_addr..low_relative_addr + BYTE_LEN_IMMEDIATE].copy_from_slice(&((relocation_addr & 0xFFFFFFFF) as u32).to_le_bytes());
+                                region.data[high_relative_addr..high_relative_addr + BYTE_LEN_IMMEDIATE].copy_from_slice(&((relocation_addr >> 32) as u32).to_le_bytes());
                             }
                             _ if reloc_type == BpfRelocationType::R_Bpf_64_Relative as u32 => {
                                 dbg!("R_Bpf_64_Relative");
+                                let offset = reloc.r_offset as usize;
+                                let imm_offset = offset + BYTE_OFFSET_IMMEDIATE;
+                                let range = imm_offset..imm_offset + BYTE_LEN_IMMEDIATE;
+                                let mut referenced_addr = u32::from_le_bytes(elf.bytes[range].try_into().unwrap()) as u64;
+
+                                if referenced_addr < constants::MM_RODATA_START {
+                                    referenced_addr = constants::MM_RODATA_START.saturating_add(referenced_addr);
+                                }
+                                dbg!(&referenced_addr);
+
+                                let region = self.memory.find_region_for_addr_mut(imm_offset).unwrap();
+                                let low_relative_addr = imm_offset - region.addr_start;
+                                let high_relative_addr = low_relative_addr + IXN_SIZE;
+                                dbg!(&low_relative_addr);
+                                dbg!(&high_relative_addr);
+                                region.data[low_relative_addr..low_relative_addr + BYTE_LEN_IMMEDIATE].copy_from_slice(&((referenced_addr & 0xFFFFFFFF) as u32).to_le_bytes());
+                                region.data[high_relative_addr..high_relative_addr + BYTE_LEN_IMMEDIATE].copy_from_slice(&((referenced_addr >> 32) as u32).to_le_bytes());
                             }
                             _ if reloc_type == BpfRelocationType::R_Bpf_64_32 as u32 => {
                                 dbg!("R_Bpf_64_32");

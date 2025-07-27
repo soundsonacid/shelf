@@ -2,8 +2,8 @@ use anyhow::Result;
 
 use crate::config::SBPFVersion;
 use crate::context::ExecutionContext;
-use crate::instruction::constants::{FRAME_PTR_REG, IXN_SIZE, IXN_SIZE_U64};
-use crate::instruction::ixn::{DecodedIxn, ExecutableIxn, Ixn};
+use crate::instruction::constants::{FRAME_PTR_REG, IXN_SIZE, IXN_SIZE_U64, MM_STACK_START};
+use crate::instruction::ixn::{BYTE_OFFSET_IMMEDIATE, DecodedIxn, ExecutableIxn, Ixn};
 
 const REGISTER_SIZE: usize = std::mem::size_of::<usize>();
 const POINTER_SIZE: usize = std::mem::size_of::<usize>();
@@ -33,7 +33,7 @@ impl Vm {
         // dbg!(&ctx.memory);
         let mut regs = [0; 11];
         // set up frame pointer
-        regs[FRAME_PTR_REG] = 0x200000000 + 4096;
+        regs[FRAME_PTR_REG] = MM_STACK_START + 4096;
         Self { ctx, pc: 0, regs, state: State::Continue }
     }
 
@@ -58,6 +58,7 @@ impl Vm {
             .read_bytes_at(self.pc as usize, IXN_SIZE)?
             .try_into()
             .ok()?;
+        // dbg!(&ixn_bytes);
         Some(Ixn(ixn_bytes))
     }
 
@@ -86,14 +87,22 @@ impl Vm {
                 let data = u64::from_le_bytes(data.try_into().unwrap());
                 self.regs[dst as usize] = data;
             }
-            ExecutableIxn::LoadDwordImm { dst, mut imm } => {
+            ExecutableIxn::LoadDwordImm { dst, imm } => {
                 // load the i32 that replaces the next instruction
-                let msh_off = (self.pc + IXN_SIZE_U64) as usize;
-                let bytes = &self.ctx.program_bytes()[msh_off..];
-                let msh = i32::from_le_bytes(bytes[msh_off..msh_off + 4].try_into()?);
+                let msh_off = self.pc as usize;
+                // dbg!(&msh_off);
+                let region = self.ctx.memory.find_region_for_addr(msh_off).unwrap();
+                let relative_addr = msh_off - region.addr_start + BYTE_OFFSET_IMMEDIATE;
+                // dbg!(&relative_addr);
+                let bytes = &region.data[relative_addr..relative_addr + 4];
+                // let bytes = &self.ctx.memory.read_bytes_at(relative_addr, 4).unwrap();
+                // dbg!(&bytes);
+                let msh = i32::from_le_bytes(bytes[..4].try_into()?);
+                // dbg!(&msh.wrapping_shl(32));
                 // combine the imm from the ixn & what we just loaded
-                imm = ((imm as u64 & 0xFFFFFFFF) | ((msh as u64).wrapping_shr(32))) as i32;
-                self.regs[dst as usize] = imm as u64;
+                let imm = (imm as u64 & 0xFFFFFFFF) | ((msh as u64).wrapping_shl(32));
+                // dbg!(&imm);
+                self.regs[dst as usize] = imm;
                 // bump pc again to skip the second half of the loaded value
                 self.pc += IXN_SIZE_U64;
             }

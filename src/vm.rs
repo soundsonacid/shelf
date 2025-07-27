@@ -34,7 +34,12 @@ impl Vm {
         let mut regs = [0; 11];
         // set up frame pointer
         regs[FRAME_PTR_REG] = MM_STACK_START + 4096;
-        Self { ctx, pc: 0, regs, state: State::Continue }
+        Self {
+            ctx,
+            pc: 0,
+            regs,
+            state: State::Continue,
+        }
     }
 
     pub fn load_and_execute(mut self) -> Result<u64> {
@@ -52,12 +57,8 @@ impl Vm {
     }
 
     fn load_next_instruction(&mut self) -> Option<Ixn> {
-        let ixn_bytes = self
-            .ctx
-            .memory
-            .read_bytes_at(self.pc as usize, IXN_SIZE)?
-            .try_into()
-            .ok()?;
+        let pc = self.pc as usize;
+        let ixn_bytes = self.ctx.memory.read(pc..pc + IXN_SIZE)?.try_into().ok()?;
         // dbg!(&ixn_bytes);
         Some(Ixn(ixn_bytes))
     }
@@ -83,7 +84,8 @@ impl Vm {
             }
             ExecutableIxn::LoadDword { dst, src, off } => {
                 let addr = self.regs[src as usize] as usize + off as usize;
-                let data = self.ctx.memory.read_bytes_at(addr, 8).unwrap();
+                let data = self.ctx.memory.read(addr..addr + 8).unwrap();
+                // let data = self.ctx.memory.read_bytes_at(addr, 8).unwrap();
                 let data = u64::from_le_bytes(data.try_into().unwrap());
                 self.regs[dst as usize] = data;
             }
@@ -91,10 +93,11 @@ impl Vm {
                 // load the i32 that replaces the next instruction
                 let msh_off = self.pc as usize;
                 // dbg!(&msh_off);
-                let region = self.ctx.memory.find_region_for_addr(msh_off).unwrap();
-                let relative_addr = msh_off - region.addr_start + BYTE_OFFSET_IMMEDIATE;
-                // dbg!(&relative_addr);
-                let bytes = &region.data[relative_addr..relative_addr + 4];
+                let bytes = self
+                    .ctx
+                    .memory
+                    .read(msh_off..msh_off + BYTE_OFFSET_IMMEDIATE)
+                    .unwrap();
                 // let bytes = &self.ctx.memory.read_bytes_at(relative_addr, 4).unwrap();
                 // dbg!(&bytes);
                 let msh = i32::from_le_bytes(bytes[..4].try_into()?);

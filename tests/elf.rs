@@ -37,21 +37,28 @@ fn test_interpret() -> Result<()> {
 
 #[test]
 fn test_syscall() -> Result<()> {
-    // test("tests/elfs/syscall_static.so", 0, None, Some(vec![("log",
-    // syscall::syscall_string)]))?;
+    test("tests/elfs/syscall_static.so", 0, None, Some(vec![("log", syscall::syscall_string)]))?;
 
-    let config = Config { enabled_sbpf_versions: SBPFVersion::V0..=SBPFVersion::V0 };
-    test("tests/elfs/syscall_reloc_64_32_sbpfv0.so", 0, Some(config), Some(vec![("log", syscall::syscall_string)]))?;
+    let config = Config {
+        enabled_sbpf_versions: SBPFVersion::V0..=SBPFVersion::V0,
+        ..Default::default()
+    };
+
+    // test("tests/elfs/syscall_reloc_64_32_sbpfv0.so", 0, Some(config),
+    // Some(vec![("log", syscall::syscall_string)]))?;
     Ok(())
 }
 
 #[test]
 fn test_sbpfv0() -> Result<()> {
-    let config = Config { enabled_sbpf_versions: SBPFVersion::V0..=SBPFVersion::V0 };
-    // test("tests/elfs/reloc_64_relative_sbpfv0.so", MM_RODATA_START + 0x138,
-    // Some(config.clone()), None)?; test("tests/elfs/reloc_64_64_sbpfv0.so",
-    // MM_RODATA_START + 0x120, Some(config.clone()), None)?; test("tests/elfs/
-    // relative_call_sbpfv0.so", 3, Some(config), None)?;
+    let config = Config {
+        enabled_sbpf_versions: SBPFVersion::V0..=SBPFVersion::V0,
+        enable_address_translation: false,
+        aligned_memory_mapping: false,
+    };
+    test("tests/elfs/reloc_64_relative_sbpfv0.so", MM_RODATA_START + 0x138, Some(config.clone()), None)?;
+    test("tests/elfs/reloc_64_64_sbpfv0.so", MM_RODATA_START + 0x120, Some(config.clone()), None)?;
+    // test("tests/elfs/relative_call_sbpfv0.so", 3, Some(config), None)?;
 
     Ok(())
 }

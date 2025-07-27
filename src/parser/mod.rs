@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use anyhow::{Result, anyhow};
 
 use crate::parser::constants::*;
@@ -38,13 +36,18 @@ fn read<const N: usize>(bytes: &[u8], off: &mut usize) -> Result<[u8; N]> {
     Ok(value)
 }
 
-#[derive(Default)]
 pub struct Elf {
     pub bytes: Vec<u8>,
     pub program_header_table: Vec<Elf64PHdr>,
-    pub named_section_headers: HashMap<String, Elf64Shdr>,
-    pub symbols: Vec<Elf64Sym>,
-    pub dynamic_symbols: Vec<Elf64Sym>,
+    pub section_header_names: Vec<String>,
+    pub section_header_table: Vec<Elf64Shdr>,
+    pub symbol_names_section_header: Option<Elf64Shdr>,
+    pub symbols_section_header: Option<Elf64Shdr>,
+    pub symbols: Option<Vec<Elf64Sym>>,
+    pub dynamic_symbols_names_section_header: Option<Elf64Shdr>,
+    pub dynamic_symbols_section_header: Option<Elf64Shdr>,
+    pub dynamic_symbols: Option<Vec<Elf64Sym>>,
+    pub dynamic_relocations_table: Option<Elf64Shdr>,
     pub dynamic_relocations: Option<Vec<Elf64Rel>>,
 }
 
@@ -63,14 +66,40 @@ impl Elf {
         let shnum = header.e_shnum as usize;
         let section_header_table = Self::parse_header_table(bytes, &mut shoff, shnum, Self::parse_section_header)?;
 
-        let named_section_headers = Self::parse_section_header_names(bytes, header.e_shstrndx as usize, &section_header_table)?;
+        let section_header_names = Self::parse_section_header_names(bytes, header.e_shstrndx as usize, &section_header_table)?;
 
-        let mut elf = Self { bytes: bytes.to_owned(), program_header_table, named_section_headers, ..Default::default() };
+        let dynamic_relocations_table = Self::find_section_header(&section_header_names, &section_header_table, REL_DYN);
+        let dynamic_symbols_names_section_header = Self::find_section_header(&section_header_names, &section_header_table, DYNSTR);
+        let symbol_names_section_header = Self::find_section_header(&section_header_names, &section_header_table, STRTAB);
+        let dynamic_symbols_section_header = Self::find_section_header(&section_header_names, &section_header_table, DYNSYM);
+        let symbols_section_header = Self::find_section_header(&section_header_names, &section_header_table, SYMTAB);
+
+        let mut elf = Self {
+            bytes: bytes.to_owned(),
+            program_header_table,
+            section_header_names,
+            section_header_table,
+            symbol_names_section_header,
+            symbols_section_header,
+            symbols: None,
+            dynamic_symbols_names_section_header,
+            dynamic_symbols_section_header,
+            dynamic_symbols: None,
+            dynamic_relocations: None,
+            dynamic_relocations_table,
+        };
 
         elf.parse_symbol_tables()?;
         elf.parse_relocations()?;
 
         Ok(elf)
+    }
+
+    fn find_section_header(section_header_names: &[String], section_header_table: &[Elf64Shdr], section: &str) -> Option<Elf64Shdr> {
+        section_header_names
+            .iter()
+            .position(|s| s == section)
+            .map(|pos| section_header_table[pos])
     }
 
     fn parse_ident(bytes: &[u8], off: &mut usize) -> Result<ElfIdent> {
@@ -141,7 +170,7 @@ impl Elf {
         })
     }
 
-    fn parse_section_header_names(elf_bytes: &[u8], string_table_index: usize, section_header_table: &[Elf64Shdr]) -> Result<HashMap<String, Elf64Shdr>> {
+    fn parse_section_header_names(elf_bytes: &[u8], string_table_index: usize, section_header_table: &[Elf64Shdr]) -> Result<Vec<String>> {
         let string_table_header = section_header_table[string_table_index];
         let range = string_table_header.range();
         let string_table_bytes = &elf_bytes[range];
@@ -152,16 +181,10 @@ impl Elf {
                 .iter()
                 .position(|i| *i == 0)
                 .ok_or(anyhow!("Failed to parse name"))?;
-            Ok(std::str::from_utf8(&string_table_bytes[start..start + end]).map(|s| s.to_owned())?)
+            Ok(std::str::from_utf8(&string_table_bytes[start..start + end]).map(str::to_owned)?)
         };
 
-        section_header_table
-            .iter()
-            .map(|header| {
-                let name = parse_header_name(header)?;
-                Ok((name, *header))
-            })
-            .collect()
+        section_header_table.iter().map(parse_header_name).collect()
     }
 
     fn parse_symbol_tables(&mut self) -> Result<()> {
@@ -176,21 +199,22 @@ impl Elf {
             })
         };
 
-        let parse_table = |table: &'static str| -> Result<Vec<Elf64Sym>> {
-            let table_range = self
-                .get_section_header(table)
-                .expect("Invalid symbol table name")
-                .range();
+        let parse_table = |table: &'static str| -> Option<Vec<Elf64Sym>> {
+            let table_range = match table {
+                _ if table == SYMTAB => self.symbols_section_header?.range(),
+                _ if table == DYNSYM => self.dynamic_symbols_section_header?.range(),
+                _ => panic!("Invalid section header name table"),
+            };
             let symbols_bytes = &self.bytes[table_range];
 
             symbols_bytes
                 .chunks_exact(std::mem::size_of::<Elf64Sym>())
-                .map(|b| parse_symbol(b, &mut 0))
-                .collect::<Result<Vec<_>>>()
+                .map(|b| parse_symbol(b, &mut 0).ok())
+                .collect::<Option<Vec<_>>>()
         };
 
-        let symbols = parse_table(SYMTAB)?;
-        let dynamic_symbols = parse_table(DYNSYM)?;
+        let symbols = parse_table(SYMTAB);
+        let dynamic_symbols = parse_table(DYNSYM);
 
         self.symbols = symbols;
         self.dynamic_symbols = dynamic_symbols;
@@ -199,9 +223,14 @@ impl Elf {
     }
 
     fn parse_relocations(&mut self) -> Result<()> {
-        let parse_relocation = |bytes: &[u8], off: &mut usize| -> Result<Elf64Rel> { Ok(Elf64Rel { r_offset: read_u64(bytes, off)?, r_info: read_u64(bytes, off)? }) };
+        let parse_relocation = |bytes: &[u8], off: &mut usize| -> Result<Elf64Rel> {
+            Ok(Elf64Rel {
+                r_offset: read_u64(bytes, off)?,
+                r_info: read_u64(bytes, off)?,
+            })
+        };
 
-        let dynamic_relocations = if let Some(dynamic_relocations) = self.named_section_headers.get(REL_DYN) {
+        let dynamic_relocations = if let Some(dynamic_relocations) = self.dynamic_relocations_table {
             let start = dynamic_relocations.sh_offset as usize;
             let len = dynamic_relocations.sh_size as usize;
             let range = start..start + len;
@@ -222,19 +251,16 @@ impl Elf {
         Ok(())
     }
 
-    pub fn get_section_header(&self, name: &str) -> Option<&Elf64Shdr> {
-        self.named_section_headers.get(name)
-    }
-
-    pub fn section_names(&self) -> Vec<String> {
-        self.named_section_headers
-            .keys()
-            .map(String::to_owned)
-            .collect()
+    pub fn section_names(&self) -> &[String] {
+        &self.section_header_names
     }
 
     pub fn get_symbol_name(&self, name_table: &str, symbol: &Elf64Sym) -> String {
-        let name_table = self.named_section_headers.get(name_table).unwrap();
+        let name_table = match name_table {
+            _ if name_table == DYNSTR => self.dynamic_symbols_names_section_header.unwrap(),
+            _ if name_table == STRTAB => self.symbol_names_section_header.unwrap(),
+            _ => panic!("Invalid section header name table"),
+        };
         let name_offset = name_table.sh_offset + symbol.st_name as u64;
         let slice = &self.bytes[name_offset as usize..];
         let end = slice.iter().position(|b| *b == 0).unwrap();

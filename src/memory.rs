@@ -1,8 +1,73 @@
+use std::ops::Range;
+
 use anyhow::Result;
 
-use crate::instruction::constants::MM_STACK_START;
+use crate::config::Config;
+use crate::instruction::constants::{MM_REGION_SIZE, MM_STACK_START};
 use crate::parser::Elf;
 use crate::parser::constants::*;
+
+pub enum MemoryMapping {
+    Identity(Memory),
+    Aligned(AlignedMemory),
+}
+
+impl MemoryMapping {
+    pub fn new(config: Config, regions: Vec<Region>) -> Self {
+        if !config.enable_address_translation {
+            return MemoryMapping::Identity(Memory::new(regions));
+        }
+
+        if config.aligned_memory_mapping {
+            MemoryMapping::Aligned(AlignedMemory::new(regions))
+        } else {
+            panic!("Unaligned memory is not supported!")
+        }
+    }
+
+    pub fn read(&self, range: Range<usize>) -> Option<&'static /* for todo typecheck */ [u8]> {
+        todo!()
+    }
+
+    pub fn write(&mut self, range: Range<usize>, bytes: &[u8]) {}
+
+    pub fn bytecode_start_host_addr(&self) -> usize {
+        self.regions()
+            .iter()
+            .find(|r| r.name == TEXT)
+            .map(|r| r.addr_start)
+            .unwrap()
+    }
+
+    pub fn stack(&self) -> Option<&Region> {
+        self.regions().iter().find(|r| r.name == BSS_STACK)
+    }
+
+    pub fn stack_mut(&mut self) -> Option<&mut Region> {
+        self.regions_mut().iter_mut().find(|r| r.name == BSS_STACK)
+    }
+
+    pub fn check_frame_pointer_bounds(&self, frame_pointer: u64) {
+        let stack_len = self.stack().unwrap().len as u64;
+        if !(MM_STACK_START <= frame_pointer || frame_pointer >= MM_STACK_START + stack_len) {
+            panic!("Stack overflow")
+        }
+    }
+
+    fn regions(&self) -> &[Region] {
+        match self {
+            MemoryMapping::Aligned(m) => &m.regions,
+            MemoryMapping::Identity(m) => &m.regions,
+        }
+    }
+
+    fn regions_mut(&mut self) -> &mut [Region] {
+        match self {
+            MemoryMapping::Aligned(m) => &mut m.regions,
+            MemoryMapping::Identity(m) => &mut m.regions,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Memory {
@@ -14,17 +79,30 @@ impl Memory {
         Self { regions }
     }
 
-    pub fn read_bytes_at(&self, addr: usize, len: usize) -> Option<&[u8]> {
-        let region = self.find_region_for_addr(addr).unwrap();
-        let relative_addr = addr.checked_sub(region.addr_start).unwrap();
-        let range = relative_addr..relative_addr + len;
-        region.data.get(range)
-    }
+    pub fn check_nonoverlapping(&self) -> Result<()> {
+        let mut sorted_regions: Vec<_> = self.regions.iter().enumerate().collect();
+        sorted_regions.sort_by_key(|(_, region)| region.vm_addr);
 
-    pub fn find_region_for_addr(&self, addr: usize) -> Option<&Region> {
-        self.regions
-            .iter()
-            .find(|r| (r.addr_start..r.addr_start + r.len).contains(&addr))
+        for window in sorted_regions.windows(2) {
+            let (_, region1) = window[0];
+            let (_, region2) = window[1];
+
+            let region1_end = region1.vm_addr + region1.len;
+
+            if region1_end > region2.vm_addr {
+                return Err(anyhow::anyhow!(
+                    "Memory regions overlap: '{}' at VM address {:#x}-{:#x} overlaps with '{}' at VM address {:#x}-{:#x}",
+                    region1.name,
+                    region1.vm_addr,
+                    region1_end,
+                    region2.name,
+                    region2.vm_addr,
+                    region2.vm_addr + region2.len
+                ));
+            }
+        }
+
+        Ok(())
     }
 
     pub fn find_region_for_addr_mut(&mut self, addr: usize) -> Option<&mut Region> {
@@ -59,9 +137,21 @@ impl Memory {
     }
 }
 
+pub struct AlignedMemory {
+    regions: Vec<Region>,
+}
+
+impl AlignedMemory {
+    pub fn new(regions: Vec<Region>) -> Self {
+        todo!()
+    }
+}
+
+#[derive(Clone)]
 pub struct Region {
     pub name: String,
     pub addr_start: usize,
+    pub vm_addr: usize,
     pub len: usize,
     pub addr_end: usize,
     pub data: Vec<u8>,
@@ -79,9 +169,11 @@ impl std::fmt::Debug for Region {
 }
 
 impl Region {
-    pub fn from_section(elf: &Elf, section_name: &str) -> Option<Self> {
-        let section = elf.named_section_headers.get(section_name)?;
+    pub fn from_section(elf: &Elf, section_name: &str, i: usize) -> Option<Self> {
+        let section = elf.section_header_table[i];
+        dbg!(&section_name);
         if !section.should_alloc() {
+            dbg!("NOALLOC");
             return None;
         }
         // get the section out of the elf at sh_offset
@@ -96,9 +188,16 @@ impl Region {
 
         let addr_start = section.sh_addr as usize;
         let addr_end = addr_start + len;
-
+        let vm_addr = MM_REGION_SIZE as usize * i;
         // when being loaded / executed, the section should be "placed" at sh_addr
-        Some(Self { name: section_name.to_owned(), addr_start, len, addr_end, data })
+        Some(Self {
+            name: section_name.to_owned(),
+            addr_start,
+            vm_addr,
+            len,
+            addr_end,
+            data,
+        })
     }
 
     pub fn write_u64(&mut self, addr_start: usize, val: u64) {
@@ -117,11 +216,6 @@ impl Region {
     }
 
     pub fn contains_vm_addr(&self, vm_addr: usize) -> bool {
-        dbg!(&self.name);
-        dbg!(&self.addr_start);
-        dbg!(&self.addr_end);
-        dbg!(self.addr_start <= vm_addr);
-        dbg!(vm_addr <= self.addr_end);
-        self.addr_start <= vm_addr && vm_addr <= self.addr_end
+        self.vm_addr <= vm_addr && vm_addr <= self.vm_addr + self.len
     }
 }

@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 
 use crate::config::{Config, SBPFVersion};
-use crate::instruction::constants::{self, IXN_SIZE, IXN_SIZE_U64};
+use crate::instruction::constants::*;
 use crate::instruction::ixn::{BYTE_LEN_IMMEDIATE, BYTE_OFFSET_IMMEDIATE, BpfRelocationType};
-use crate::memory::{Memory, Region};
+use crate::memory::{MemoryMapping, Region};
 use crate::parser::Elf;
-use crate::parser::constants::{DYNSTR, TEXT};
+use crate::parser::constants::DYNSTR;
 use crate::vm::Vm;
 
 pub type Functions<T> = BTreeMap<u32, T>;
@@ -21,7 +21,7 @@ pub enum ExecutableProgram {
 
 pub struct ExecutionContext {
     pub program: ExecutableProgram,
-    pub memory: Memory,
+    pub memory: MemoryMapping,
     pub syscalls: Functions<Syscall>,
     pub funcs: Functions</* st_value */ u64>,
     pub config: Config,
@@ -32,23 +32,31 @@ impl ExecutionContext {
         let regions = elf
             .section_names()
             .iter()
-            .filter_map(|region| Region::from_section(&elf, region))
+            .enumerate()
+            .filter_map(|(i, region)| Region::from_section(&elf, region, i))
             .collect::<Vec<_>>();
+        let config = config.unwrap_or_default();
 
-        // dbg!(&elf.dynamic_relocations);
-        // dbg!(&elf.program_header_table);
-        // dbg!(&elf.dynamic_symbols);
+        let memory = MemoryMapping::new(config.clone(), regions);
 
         let mut funcs: Functions<u64> = BTreeMap::new();
-        for symbol in &elf.dynamic_symbols {
-            let symbol_name = elf.get_symbol_name(DYNSTR, symbol);
-            let name = hash_symbol_name(symbol_name.as_bytes());
-            funcs.insert(name, symbol.st_value);
+        if let Some(dynamic_symbols) = elf.dynamic_symbols.as_ref() {
+            for symbol in dynamic_symbols {
+                let symbol_name = elf.get_symbol_name(DYNSTR, symbol);
+                let name = hash_symbol_name(symbol_name.as_bytes());
+                funcs.insert(name, symbol.st_value);
+            }
         }
 
         let program = ExecutableProgram::Elf(elf);
 
-        let mut this = Self { program, memory: Memory::new(regions), syscalls: BTreeMap::new(), funcs, config: config.unwrap_or_default() };
+        let mut this = Self {
+            program,
+            memory,
+            syscalls: BTreeMap::new(),
+            funcs,
+            config,
+        };
         this.fixup();
         this
     }
@@ -72,7 +80,6 @@ impl ExecutionContext {
         }
     }
 
-    #[rustfmt::skip]
     fn fixup(&mut self) {
         match &self.program {
             ExecutableProgram::Elf(elf) => {
@@ -89,7 +96,7 @@ impl ExecutionContext {
                             _ if reloc_type == BpfRelocationType::R_Bpf_None as u32 => {}
                             _ if reloc_type == BpfRelocationType::R_Bpf_64_64 as u32 => {
                                 dbg!("R_Bpf_64_64");
-                                let symbol = elf.dynamic_symbols[sym as usize];
+                                let symbol = elf.dynamic_symbols.as_ref().unwrap()[sym as usize];
 
                                 let offset = reloc.r_offset as usize;
                                 let imm_offset = offset + BYTE_OFFSET_IMMEDIATE;
@@ -98,20 +105,21 @@ impl ExecutionContext {
                                 dbg!(&referenced_addr);
                                 let mut relocation_addr = symbol.st_value + referenced_addr as u64;
 
-                                if relocation_addr < constants::MM_RODATA_START {
-                                    relocation_addr = constants::MM_RODATA_START.saturating_add(relocation_addr);
+                                if relocation_addr < MM_RODATA_START {
+                                    relocation_addr = MM_RODATA_START.saturating_add(relocation_addr);
                                 }
 
                                 dbg!(&relocation_addr);
                                 dbg!(&relocation_addr.to_le_bytes());
 
-                                let region = self.memory.find_region_for_addr_mut(imm_offset).unwrap();
-                                let low_relative_addr = imm_offset - region.addr_start;
-                                let high_relative_addr = low_relative_addr + IXN_SIZE;
-                                dbg!(&low_relative_addr);
-                                dbg!(&high_relative_addr);
-                                region.data[low_relative_addr..low_relative_addr + BYTE_LEN_IMMEDIATE].copy_from_slice(&((relocation_addr & 0xFFFFFFFF) as u32).to_le_bytes());
-                                region.data[high_relative_addr..high_relative_addr + BYTE_LEN_IMMEDIATE].copy_from_slice(&((relocation_addr >> 32) as u32).to_le_bytes());
+                                let low_offset = imm_offset;
+                                let high_offset = low_offset + IXN_SIZE;
+
+                                self.memory
+                                    .write(low_offset..low_offset + BYTE_LEN_IMMEDIATE, &((relocation_addr & 0xFFFFFFFF) as u32).to_le_bytes());
+
+                                self.memory
+                                    .write(high_offset..high_offset + BYTE_LEN_IMMEDIATE, &((relocation_addr >> 32) as u32).to_le_bytes());
                             }
                             _ if reloc_type == BpfRelocationType::R_Bpf_64_Relative as u32 => {
                                 dbg!("R_Bpf_64_Relative");
@@ -120,28 +128,28 @@ impl ExecutionContext {
                                 let range = imm_offset..imm_offset + BYTE_LEN_IMMEDIATE;
                                 let mut referenced_addr = u32::from_le_bytes(elf.bytes[range].try_into().unwrap()) as u64;
 
-                                if referenced_addr < constants::MM_RODATA_START {
-                                    referenced_addr = constants::MM_RODATA_START.saturating_add(referenced_addr);
+                                if referenced_addr < MM_RODATA_START {
+                                    referenced_addr = MM_RODATA_START.saturating_add(referenced_addr);
                                 }
                                 dbg!(&referenced_addr);
 
-                                let region = self.memory.find_region_for_addr_mut(imm_offset).unwrap();
-                                let low_relative_addr = imm_offset - region.addr_start;
-                                let high_relative_addr = low_relative_addr + IXN_SIZE;
-                                dbg!(&low_relative_addr);
-                                dbg!(&high_relative_addr);
-                                region.data[low_relative_addr..low_relative_addr + BYTE_LEN_IMMEDIATE].copy_from_slice(&((referenced_addr & 0xFFFFFFFF) as u32).to_le_bytes());
-                                region.data[high_relative_addr..high_relative_addr + BYTE_LEN_IMMEDIATE].copy_from_slice(&((referenced_addr >> 32) as u32).to_le_bytes());
+                                let low_offset = imm_offset;
+                                let high_offset = low_offset + IXN_SIZE;
+
+                                self.memory
+                                    .write(low_offset..low_offset + BYTE_LEN_IMMEDIATE, &((referenced_addr & 0xFFFFFFFF) as u32).to_le_bytes());
+
+                                self.memory
+                                    .write(high_offset..high_offset + BYTE_LEN_IMMEDIATE, &((referenced_addr >> 32) as u32).to_le_bytes());
                             }
                             _ if reloc_type == BpfRelocationType::R_Bpf_64_32 as u32 => {
                                 dbg!("R_Bpf_64_32");
-                                let symbol = elf.dynamic_symbols[sym as usize];
+                                let symbol = elf.dynamic_symbols.as_ref().unwrap()[sym as usize];
                                 let name = elf.get_symbol_name(DYNSTR, &symbol);
 
                                 // if the symbol is a defined function this is just a regular fn call
                                 let key: u32 = if symbol.is_function() && symbol.st_value != 0 {
-                                    let text_region = elf.get_section_header(TEXT).unwrap();
-                                    let jump_pc = (symbol.st_value - text_region.sh_addr) / IXN_SIZE_U64;
+                                    let jump_pc = (symbol.st_value - self.memory.bytecode_start_host_addr() as u64) / IXN_SIZE_U64;
 
                                     if self.config.below_sbpf_version(SBPFVersion::V3) {
                                         if name == "entrypoint" {
@@ -157,10 +165,8 @@ impl ExecutionContext {
                                     hash_symbol_name(name.as_bytes())
                                 };
 
-                                let region = self.memory.find_region_for_addr_mut(addr).unwrap();
-                                let relative_addr = (addr - region.addr_start) + BYTE_OFFSET_IMMEDIATE;
-                                let range = relative_addr..relative_addr + BYTE_LEN_IMMEDIATE;
-                                region.data[range].copy_from_slice(&u32::to_le_bytes(key));
+                                self.memory
+                                    .write(addr..addr + BYTE_LEN_IMMEDIATE, &u32::to_le_bytes(key));
                             }
                             _ => panic!("Unknown relocation type"),
                         }

@@ -11,11 +11,17 @@ pub enum SBPFVersion {
 #[derive(Clone)]
 pub struct Config {
     pub enabled_sbpf_versions: RangeInclusive<SBPFVersion>,
+    pub enable_address_translation: bool,
+    pub aligned_memory_mapping: bool,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { enabled_sbpf_versions: SBPFVersion::V0..=SBPFVersion::V3 }
+        Self {
+            enabled_sbpf_versions: SBPFVersion::V0..=SBPFVersion::V3,
+            enable_address_translation: true,
+            aligned_memory_mapping: true,
+        }
     }
 }
 

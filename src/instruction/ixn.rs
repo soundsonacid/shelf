@@ -181,38 +181,134 @@ impl DecodedIxn {
         dbg!(&self);
         match self.opcode {
             // Load operations
-            LD_B_REG => ExecutableIxn::LoadByte { dst: self.dst, src: self.src, off: self.off },
-            LD_H_REG => ExecutableIxn::LoadHalf { dst: self.dst, src: self.src, off: self.off },
-            LD_W_REG => ExecutableIxn::LoadWord { dst: self.dst, src: self.src, off: self.off },
-            LD_DW_REG => ExecutableIxn::LoadDword { dst: self.dst, src: self.src, off: self.off },
+            LD_B_REG => ExecutableIxn::LoadByte {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            LD_H_REG => ExecutableIxn::LoadHalf {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            LD_W_REG => ExecutableIxn::LoadWord {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            LD_DW_REG => ExecutableIxn::LoadDword {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
 
-            LD_1B_REG => ExecutableIxn::LoadByte { dst: self.dst, src: self.src, off: self.off },
-            LD_2B_REG => ExecutableIxn::LoadHalf { dst: self.dst, src: self.src, off: self.off },
-            LD_4B_REG => ExecutableIxn::LoadWord { dst: self.dst, src: self.src, off: self.off },
-            LD_8B_REG => ExecutableIxn::LoadDword { dst: self.dst, src: self.src, off: self.off },
+            LD_1B_REG => ExecutableIxn::LoadByte {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            LD_2B_REG => ExecutableIxn::LoadHalf {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            LD_4B_REG => ExecutableIxn::LoadWord {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            LD_8B_REG => ExecutableIxn::LoadDword {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
 
             LD_DW_IMM if config.below_sbpf_version(SBPFVersion::V2) => ExecutableIxn::LoadDwordImm { dst: self.dst, imm: self.imm },
 
             // Store operations
-            ST_B_REG => ExecutableIxn::StoreByte { dst: self.dst, src: self.src, off: self.off },
-            ST_H_REG => ExecutableIxn::StoreHalf { dst: self.dst, src: self.src, off: self.off },
-            ST_W_REG => ExecutableIxn::StoreWord { dst: self.dst, src: self.src, off: self.off },
-            ST_DW_REG => ExecutableIxn::StoreDword { dst: self.dst, src: self.src, off: self.off },
+            ST_B_REG => ExecutableIxn::StoreByte {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            ST_H_REG => ExecutableIxn::StoreHalf {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            ST_W_REG => ExecutableIxn::StoreWord {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            ST_DW_REG => ExecutableIxn::StoreDword {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
 
-            ST_1B_REG => ExecutableIxn::StoreByte { dst: self.dst, src: self.src, off: self.off },
-            ST_2B_REG => ExecutableIxn::StoreHalf { dst: self.dst, src: self.src, off: self.off },
-            ST_4B_REG => ExecutableIxn::StoreWord { dst: self.dst, src: self.src, off: self.off },
-            ST_8B_REG => ExecutableIxn::StoreDword { dst: self.dst, src: self.src, off: self.off },
+            ST_1B_REG => ExecutableIxn::StoreByte {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            ST_2B_REG => ExecutableIxn::StoreHalf {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            ST_4B_REG => ExecutableIxn::StoreWord {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            ST_8B_REG => ExecutableIxn::StoreDword {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
 
-            ST_B_IMM => ExecutableIxn::StoreByteImm { dst: self.dst, off: self.off, imm: self.imm },
-            ST_H_IMM => ExecutableIxn::StoreHalfImm { dst: self.dst, off: self.off, imm: self.imm },
-            ST_W_IMM => ExecutableIxn::StoreWordImm { dst: self.dst, off: self.off, imm: self.imm },
-            ST_DW_IMM => ExecutableIxn::StoreDwordImm { dst: self.dst, off: self.off, imm: self.imm },
+            ST_B_IMM => ExecutableIxn::StoreByteImm {
+                dst: self.dst,
+                off: self.off,
+                imm: self.imm,
+            },
+            ST_H_IMM => ExecutableIxn::StoreHalfImm {
+                dst: self.dst,
+                off: self.off,
+                imm: self.imm,
+            },
+            ST_W_IMM => ExecutableIxn::StoreWordImm {
+                dst: self.dst,
+                off: self.off,
+                imm: self.imm,
+            },
+            ST_DW_IMM => ExecutableIxn::StoreDwordImm {
+                dst: self.dst,
+                off: self.off,
+                imm: self.imm,
+            },
 
-            ST_1B_IMM => ExecutableIxn::StoreByteImm { dst: self.dst, off: self.off, imm: self.imm },
-            ST_2B_IMM => ExecutableIxn::StoreHalfImm { dst: self.dst, off: self.off, imm: self.imm },
-            ST_4B_IMM => ExecutableIxn::StoreWordImm { dst: self.dst, off: self.off, imm: self.imm },
-            ST_8B_IMM => ExecutableIxn::StoreDwordImm { dst: self.dst, off: self.off, imm: self.imm },
+            ST_1B_IMM => ExecutableIxn::StoreByteImm {
+                dst: self.dst,
+                off: self.off,
+                imm: self.imm,
+            },
+            ST_2B_IMM => ExecutableIxn::StoreHalfImm {
+                dst: self.dst,
+                off: self.off,
+                imm: self.imm,
+            },
+            ST_4B_IMM => ExecutableIxn::StoreWordImm {
+                dst: self.dst,
+                off: self.off,
+                imm: self.imm,
+            },
+            ST_8B_IMM => ExecutableIxn::StoreDwordImm {
+                dst: self.dst,
+                off: self.off,
+                imm: self.imm,
+            },
 
             // 32-bit ALU operations
             ADD32_REG => ExecutableIxn::Add32 { dst: self.dst, src: self.src },
@@ -271,28 +367,116 @@ impl DecodedIxn {
 
             // Jump operations
             JA => ExecutableIxn::Ja { off: self.off },
-            JEQ_REG => ExecutableIxn::Jeq { dst: self.dst, src: self.src, off: self.off },
-            JEQ_IMM => ExecutableIxn::JeqImm { dst: self.dst, imm: self.imm, off: self.off },
-            JGT_REG => ExecutableIxn::Jgt { dst: self.dst, src: self.src, off: self.off },
-            JGT_IMM => ExecutableIxn::JgtImm { dst: self.dst, imm: self.imm, off: self.off },
-            JGE_REG => ExecutableIxn::Jge { dst: self.dst, src: self.src, off: self.off },
-            JGE_IMM => ExecutableIxn::JgeImm { dst: self.dst, imm: self.imm, off: self.off },
-            JLT_REG => ExecutableIxn::Jlt { dst: self.dst, src: self.src, off: self.off },
-            JLT_IMM => ExecutableIxn::JltImm { dst: self.dst, imm: self.imm, off: self.off },
-            JLE_REG => ExecutableIxn::Jle { dst: self.dst, src: self.src, off: self.off },
-            JLE_IMM => ExecutableIxn::JleImm { dst: self.dst, imm: self.imm, off: self.off },
-            JSET_REG => ExecutableIxn::Jset { dst: self.dst, src: self.src, off: self.off },
-            JSET_IMM => ExecutableIxn::JsetImm { dst: self.dst, imm: self.imm, off: self.off },
-            JNE_REG => ExecutableIxn::Jne { dst: self.dst, src: self.src, off: self.off },
-            JNE_IMM => ExecutableIxn::JneImm { dst: self.dst, imm: self.imm, off: self.off },
-            JSGT_REG => ExecutableIxn::Jsgt { dst: self.dst, src: self.src, off: self.off },
-            JSGT_IMM => ExecutableIxn::JsgtImm { dst: self.dst, imm: self.imm, off: self.off },
-            JSGE_REG => ExecutableIxn::Jsge { dst: self.dst, src: self.src, off: self.off },
-            JSGE_IMM => ExecutableIxn::JsgeImm { dst: self.dst, imm: self.imm, off: self.off },
-            JSLT_REG => ExecutableIxn::Jslt { dst: self.dst, src: self.src, off: self.off },
-            JSLT_IMM => ExecutableIxn::JsltImm { dst: self.dst, imm: self.imm, off: self.off },
-            JSLE_REG => ExecutableIxn::Jsle { dst: self.dst, src: self.src, off: self.off },
-            JSLE_IMM => ExecutableIxn::JsleImm { dst: self.dst, imm: self.imm, off: self.off },
+            JEQ_REG => ExecutableIxn::Jeq {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            JEQ_IMM => ExecutableIxn::JeqImm {
+                dst: self.dst,
+                imm: self.imm,
+                off: self.off,
+            },
+            JGT_REG => ExecutableIxn::Jgt {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            JGT_IMM => ExecutableIxn::JgtImm {
+                dst: self.dst,
+                imm: self.imm,
+                off: self.off,
+            },
+            JGE_REG => ExecutableIxn::Jge {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            JGE_IMM => ExecutableIxn::JgeImm {
+                dst: self.dst,
+                imm: self.imm,
+                off: self.off,
+            },
+            JLT_REG => ExecutableIxn::Jlt {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            JLT_IMM => ExecutableIxn::JltImm {
+                dst: self.dst,
+                imm: self.imm,
+                off: self.off,
+            },
+            JLE_REG => ExecutableIxn::Jle {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            JLE_IMM => ExecutableIxn::JleImm {
+                dst: self.dst,
+                imm: self.imm,
+                off: self.off,
+            },
+            JSET_REG => ExecutableIxn::Jset {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            JSET_IMM => ExecutableIxn::JsetImm {
+                dst: self.dst,
+                imm: self.imm,
+                off: self.off,
+            },
+            JNE_REG => ExecutableIxn::Jne {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            JNE_IMM => ExecutableIxn::JneImm {
+                dst: self.dst,
+                imm: self.imm,
+                off: self.off,
+            },
+            JSGT_REG => ExecutableIxn::Jsgt {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            JSGT_IMM => ExecutableIxn::JsgtImm {
+                dst: self.dst,
+                imm: self.imm,
+                off: self.off,
+            },
+            JSGE_REG => ExecutableIxn::Jsge {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            JSGE_IMM => ExecutableIxn::JsgeImm {
+                dst: self.dst,
+                imm: self.imm,
+                off: self.off,
+            },
+            JSLT_REG => ExecutableIxn::Jslt {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            JSLT_IMM => ExecutableIxn::JsltImm {
+                dst: self.dst,
+                imm: self.imm,
+                off: self.off,
+            },
+            JSLE_REG => ExecutableIxn::Jsle {
+                dst: self.dst,
+                src: self.src,
+                off: self.off,
+            },
+            JSLE_IMM => ExecutableIxn::JsleImm {
+                dst: self.dst,
+                imm: self.imm,
+                off: self.off,
+            },
 
             // Special operations
             CALL_IMM => ExecutableIxn::Call { imm: self.imm },
